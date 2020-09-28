@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.stream.IntStream;
 
 import static java.math.BigInteger.*;
+import javax.xml.bind.DatatypeConverter;
 
 /**
  * Implements Galois Counter Mode (GCM) in accordance with the
@@ -285,6 +286,31 @@ public class GCM extends Set3 {
         return  new PolynomialRing2<>(IntStream.range(0, last)
                 .mapToObj(i -> toFE( Arrays.copyOfRange(buf, (last - i - 1) * BLOCK_SIZE, (last - i) * BLOCK_SIZE)) )
                 .toArray(PolynomialGaloisFieldOverGF2.FieldElement[]::new));
+    }
+
+    public static String forgeCipherText(byte[] legitCipherText, byte[] chosenCipherText,
+            PolynomialGaloisFieldOverGF2.FieldElement authenticationKey)
+    {
+        byte[] legitCtxt = Arrays.copyOfRange(legitCipherText, 0, legitCipherText.length - BLOCK_SIZE);
+        byte[] legitTag = Arrays.copyOfRange(legitCipherText, legitCipherText.length - BLOCK_SIZE, legitCipherText.length);
+
+        // We start with the original legit tag...
+        PolynomialGaloisFieldOverGF2.FieldElement forgedTag = toFE(legitTag);
+        int numBlocks = legitCtxt.length / BLOCK_SIZE + 1;
+
+        for (int i = 0, power = numBlocks + 1; i < numBlocks; i++, power--) {
+             // subtract the c blocks (c0, c1 ...)
+            forgedTag = forgedTag.subtract(
+                    toFE( Arrays.copyOfRange(legitCtxt, i * BLOCK_SIZE, (i + 1) * BLOCK_SIZE) )
+                        .multiply(authenticationKey.scale(valueOf(power))) );
+
+            // add the c' blocks (c'0, c'1 ...)
+            forgedTag = forgedTag.add(
+                    toFE( Arrays.copyOfRange(chosenCipherText, i * BLOCK_SIZE, (i + 1) * BLOCK_SIZE) )
+                        .multiply(authenticationKey.scale(valueOf(power))) );
+        }
+
+        return DatatypeConverter.printHexBinary(chosenCipherText) + DatatypeConverter.printHexBinary(forgedTag.asArray());
     }
 
     /**
